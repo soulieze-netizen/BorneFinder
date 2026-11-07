@@ -43,7 +43,7 @@ export async function countryOf(lat: number, lng: number): Promise<string> {
   return lat > 49.5 && lat < 51.5 && lng > 2.55 && lng < 6.4 ? 'BE' : '';
 }
 
-interface RoutePt { lat: number; lng: number; km: number }
+export interface RoutePt { lat: number; lng: number; km: number }
 
 async function osrmRoute(from: Place, to: Place): Promise<{ pts: RoutePt[]; km: number; minutes: number }> {
   const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
@@ -187,6 +187,8 @@ export interface Plan {
   from: Place; to: Place; km: number; driveMin: number;
   stops: Stop[]; arrivalSoc: number; warnings: string[];
   border?: { km: number; soc: number };   // passage de frontière estimé
+  pts: RoutePt[];                         // tracé (allégé) pour « Recharger maintenant »
+  stations: RouteStation[];               // toutes les bornes le long du trajet
 }
 
 function isFast(s: RouteStation, minKw: number) {
@@ -289,11 +291,38 @@ export async function planTrip(from: Place, to: Place, o: PlanOptions): Promise<
   }
   const arrivalSoc = soc - (route.km - pos) / kmPerPct;
   if (arrivalSoc < o.reserveSoc) warnings.push(`Arrivée estimée à ${Math.round(arrivalSoc)} % : trop juste.`);
-  return { from, to, km: route.km, driveMin: route.minutes, stops, arrivalSoc, warnings, border };
+  const pts: RoutePt[] = []; let nx = 0;
+  for (const p of route.pts) if (p.km >= nx) { pts.push(p); nx = p.km + 0.5; }
+  pts.push(route.pts[route.pts.length - 1]);
+  return { from, to, km: route.km, driveMin: route.minutes, stops, arrivalSoc, warnings, border, pts, stations: all };
 }
 
 export function mapsLink(plan: Plan) {
   const wp = plan.stops.map(s => `${s.station.lat},${s.station.lng}`).join('|');
   return `https://www.google.com/maps/dir/?api=1&origin=${plan.from.lat},${plan.from.lng}` +
     `&destination=${plan.to.lat},${plan.to.lng}${wp ? `&waypoints=${encodeURIComponent(wp)}` : ''}&travelmode=driving`;
+}
+
+export interface Nearby { station: RouteStation; aheadKm: number; offRouteKm: number }
+
+/** Bornes rapides devant moi sur le trajet : ≥ 100 kW d'abord, ≥ 50 kW s'il n'y a rien. Belges en premier tant que je suis en Belgique. */
+export function chargeNow(plan: Plan, lat: number, lng: number) {
+  let best = Infinity, prog = 0;
+  for (const p of plan.pts) { const d = distanceKm(lat, lng, p.lat, p.lng); if (d < best) { best = d; prog = p.km; } }
+  const beKm = plan.stations.filter(s => s.inBelgium).map(s => s.progressKm);
+  const startBE = plan.from.country === 'BE', endBE = plan.to.country === 'BE';
+  const inBE = beKm.length ? (startBE && !endBE ? prog < Math.max(...beKm) : !startBE && endBE ? prog > Math.min(...beKm) : startBE) : startBE;
+  const ahead = (min: number) => plan.stations
+    .filter(s => s.progressKm > prog + 0.5 && s.detourKm <= 3 && isFast(s, min))
+    .map(s => ({ station: s, aheadKm: s.progressKm - prog, offRouteKm: s.detourKm }))
+    .sort((a, b) => (inBE ? Number(b.station.inBelgium) - Number(a.station.inBelgium) : 0) || a.aheadKm - b.aheadKm);
+  let list = ahead(100), fallback = false;
+  if (!list.length) { list = ahead(50); fallback = true; }
+  return { list: list.slice(0, 3), fallback, offRouteKm: best, inBE };
+}
+
+/** Google Maps : ma position → borne → destination. */
+export function viaStationLink(plan: Plan, s: RouteStation) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${plan.to.lat},${plan.to.lng}` +
+    `&waypoints=${s.lat},${s.lng}&travelmode=driving`;
 }

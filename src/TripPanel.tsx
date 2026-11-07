@@ -2,7 +2,8 @@ import { OCM_KEY } from './net';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Car, countryOf, DEFAULT_CAR, geocode, mapsLink, Place, Plan, planTrip } from './route';
+import * as Location from 'expo-location';
+import { Car, chargeNow, countryOf, DEFAULT_CAR, geocode, mapsLink, Nearby, Place, Plan, planTrip, viaStationLink } from './route';
 
 const C = { bg: '#0F2A1D', card: '#163A29', text: '#F2F7F4', muted: '#9FB8AA', accent: '#3DDC84', warn: '#FFB74D' };
 
@@ -18,6 +19,22 @@ export default function TripPanel({ position, ocmKey }: Props) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [showCar, setShowCar] = useState(false);
+  const [near, setNear] = useState<{ list: Nearby[]; fallback: boolean; offRouteKm: number; inBE: boolean } | null>(null);
+  const [nearBusy, setNearBusy] = useState(false);
+
+  // Le trajet est gardé en mémoire : il reste disponible en revenant de Google Maps.
+  useEffect(() => { AsyncStorage.getItem('lastPlan').then(v => { if (v) try { setPlan(JSON.parse(v)); } catch {} }); }, []);
+
+  async function rechargeNow() {
+    if (!plan) return;
+    setNearBusy(true); setNear(null); setError('');
+    try {
+      const cur = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
+      const p = cur ? { lat: cur.coords.latitude, lng: cur.coords.longitude } : position;
+      if (!p) setError('Position inconnue : active la localisation.');
+      else setNear(chargeNow(plan, p.lat, p.lng));
+    } finally { setNearBusy(false); }
+  }
 
   useEffect(() => {
     AsyncStorage.getItem('trip').then(v => {
@@ -56,7 +73,8 @@ export default function TripPanel({ position, ocmKey }: Props) {
         car, startSoc: s, reserveSoc: 12, ocmKey: ocmKey?.trim() || OCM_KEY,
         borderTargetSoc: Math.max(50, Math.min(100, parseInt(borderTarget, 10) || 95)),
       });
-      setPlan(p);
+      setPlan(p); setNear(null);
+      AsyncStorage.setItem('lastPlan', JSON.stringify(p)).catch(() => {});
       // Ouvre directement le trajet complet (avec les arrêts recharge) dans Google Maps.
       Linking.openURL(mapsLink(p)).catch(() => {});
     } catch (e: any) { setError(e?.message ?? String(e)); }
@@ -120,6 +138,24 @@ export default function TripPanel({ position, ocmKey }: Props) {
             )}
             <Text style={[st.big, { color: plan.arrivalSoc >= 20 ? C.accent : C.warn }]}>Arrivée ≈ {Math.round(plan.arrivalSoc)} %</Text>
           </View>
+          <Pressable style={[st.btn, { backgroundColor: C.warn }]} onPress={rechargeNow} disabled={nearBusy}>
+            <Text style={st.btnTxt}>{nearBusy ? 'Recherche…' : '⚡ Recharger maintenant (bornes devant moi)'}</Text>
+          </Pressable>
+          {near && (
+            <View style={{ gap: 8 }}>
+              {near.offRouteKm > 10 && <Text style={{ color: C.warn }}>⚠️ Tu es à {Math.round(near.offRouteKm)} km du trajet prévu : recalcule le trajet.</Text>}
+              {near.fallback && near.list.length > 0 && <Text style={{ color: C.warn }}>Aucune borne ≥ 100 kW devant toi : bornes ≥ 50 kW.</Text>}
+              {!near.list.length && <Text style={{ color: C.warn }}>Aucune borne rapide devant toi sur le trajet.</Text>}
+              {near.list.map(n => (
+                <Pressable key={n.station.id} style={[st.card, { borderWidth: 1, borderColor: C.warn }]} onPress={() => Linking.openURL(viaStationLink(plan, n.station))}>
+                  <Text style={st.title}>{n.station.inBelgium ? '🇧🇪 ' : ''}{n.station.name}</Text>
+                  {n.station.operator && <Text style={st.muted}>{n.station.operator}</Text>}
+                  <Text style={st.text}>{n.station.maxKw ? `${Math.round(n.station.maxKw)} kW` : '? kW'} · dans {Math.round(n.aheadKm)} km · {n.offRouteKm.toFixed(1)} km de la route</Text>
+                  <Text style={[st.reason, { marginTop: 6, marginBottom: 0 }]}>Y aller puis reprendre le trajet ›</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
           {plan.warnings.map((w, i) => <Text key={i} style={{ color: C.warn }}>⚠️ {w}</Text>)}
           {plan.stops.length === 0 && <Text style={st.text}>✅ Pas d'arrêt nécessaire.</Text>}
           {plan.stops.map((s, i) => (
