@@ -57,6 +57,8 @@ export default function TripPanel({ position, ocmKey }: Props) {
         borderTargetSoc: Math.max(50, Math.min(100, parseInt(borderTarget, 10) || 95)),
       });
       setPlan(p);
+      // Ouvre directement le trajet complet (avec les arrêts recharge) dans Google Maps.
+      Linking.openURL(mapsLink(p)).catch(() => {});
     } catch (e: any) { setError(e?.message ?? String(e)); }
     setBusy('');
   }
