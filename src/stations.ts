@@ -15,6 +15,7 @@ export interface Station {
   plugs: Plug[];
   points?: number;           // nombre de points de charge
   address?: string;
+  price?: string;            // tarif si une base le connaît (non vérifié)
   sources: ('OSM' | 'OCM')[];
   distanceKm?: number;
 }
@@ -62,6 +63,7 @@ async function fetchOsm(lat: number, lng: number, radiusKm: number): Promise<Sta
           lat: e.lat ?? e.center?.lat, lng: e.lon ?? e.center?.lon,
           maxKw, plugs: [...plugs],
           points: parseInt(t.capacity, 10) || undefined,
+          price: t.charge || t['charge:conditional'] || undefined,
           address: [t['addr:street'] && `${t['addr:street']} ${t['addr:housenumber'] ?? ''}`.trim(), t['addr:city']].filter(Boolean).join(', ') || undefined,
           sources: ['OSM'],
         };
@@ -92,6 +94,7 @@ async function fetchOcm(lat: number, lng: number, radiusKm: number, key: string)
       plugs: [...new Set(conns.map(c => OCM_PLUGS[c.ConnectionTypeID] ?? 'Autre'))],
       points: p.NumberOfPoints || conns.reduce((n, c) => n + (c.Quantity || 1), 0) || undefined,
       address: [a.AddressLine1, a.Town].filter(Boolean).join(', ') || undefined,
+      price: p.UsageCost || undefined,
       sources: ['OCM'],
     };
   }).filter((s: Station) => s.lat && s.lng);
@@ -113,7 +116,7 @@ function merge(list: Station[]): Station[] {
     twin.sources = [...new Set([...twin.sources, ...s.sources])];
     twin.plugs = [...new Set([...twin.plugs, ...s.plugs])];
     if (s.maxKw != null && (twin.maxKw == null || s.maxKw > twin.maxKw)) twin.maxKw = s.maxKw;
-    twin.operator ??= s.operator; twin.address ??= s.address;
+    twin.operator ??= s.operator; twin.address ??= s.address; twin.price ??= s.price;
     twin.points = Math.max(twin.points ?? 0, s.points ?? 0) || undefined;
     if (twin.name === 'Borne de recharge') twin.name = s.name;
   }
@@ -133,4 +136,10 @@ export async function searchStations(lat: number, lng: number, radiusKm: number,
     .map(s => ({ ...s, distanceKm: distanceKm(lat, lng, s.lat, s.lng) }))
     .sort((a, b) => a.distanceKm! - b.distanceKm!);
   return { stations, errors };
+}
+
+/** Lien pour consulter le tarif réel (recherche Seety, qui affiche les prix à jour). */
+export function priceLink(name: string, operator?: string, address?: string) {
+  const q = ['seety', operator, name, address].filter(Boolean).join(' ');
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
 }

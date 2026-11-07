@@ -7,7 +7,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Plug, searchStations, Station } from './src/stations';
+import { Plug, priceLink, searchStations, Station } from './src/stations';
 import TripPanel from './src/TripPanel';
 
 const C = { bg: '#0F2A1D', card: '#163A29', text: '#F2F7F4', muted: '#9FB8AA', accent: '#3DDC84', warn: '#FFB74D' };
@@ -107,6 +107,7 @@ function Main() {
         <Text style={st.sub} numberOfLines={1}>
           {[s.operator, s.plugs.join(' · '), s.points ? `${s.points} pts` : null].filter(Boolean).join('  ·  ')}
         </Text>
+        {s.price ? <Text style={[st.sub, { color: C.warn }]} numberOfLines={1}>💶 {s.price} (non vérifié)</Text> : null}
         <Text style={st.src}>{s.sources.join(' + ')}{s.maxKw == null ? '  ·  puissance non renseignée' : ''}</Text>
       </View>
       <View style={{ alignItems: 'flex-end', gap: 6 }}>
@@ -205,6 +206,12 @@ function Main() {
               </Text>
               <Text style={st.sub}>Prises : {selected.plugs.join(', ') || 'non renseignées'}{selected.points ? ` · ${selected.points} points de charge` : ''}</Text>
               <Text style={st.src}>Source : {selected.sources.join(' + ')} · à {selected.distanceKm!.toFixed(1)} km</Text>
+              <Text style={[st.sub, { color: selected.price ? C.warn : C.muted, marginTop: 8 }]}>
+                💶 {selected.price ? `${selected.price} (non vérifié)` : 'Prix non renseigné dans les bases'}
+              </Text>
+              <Pressable style={[st.chip, { alignSelf: 'flex-start', marginTop: 6 }]} onPress={() => Linking.openURL(priceLink(selected.name, selected.operator, selected.address))}>
+                <Text style={st.chipTxt}>🔎 Voir le prix réel (Seety)</Text>
+              </Pressable>
               <Pressable style={[st.go, { alignSelf: 'stretch', paddingVertical: 14, marginTop: 14 }]} onPress={() => navigateTo(selected)}>
                 <Text style={[st.goTxt, { fontSize: 17, textAlign: 'center' }]}>🧭 Y aller (Google Maps)</Text>
               </Pressable>

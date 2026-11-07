@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { priceLink } from './stations';
 import { Car, countryOf, DEFAULT_CAR, geocode, mapsLink, Place, Plan, planTrip } from './route';
 
 const C = { bg: '#0F2A1D', card: '#163A29', text: '#F2F7F4', muted: '#9FB8AA', accent: '#3DDC84', warn: '#FFB74D' };
@@ -125,6 +126,11 @@ export default function TripPanel({ position }: Props) {
                 {s.station.maxKw ? `${Math.round(s.station.maxKw)} kW` : '? kW'} · km {Math.round(s.station.progressKm)} · {s.station.detourKm.toFixed(1)} km de la route
               </Text>
               <Text style={st.text}>Arrivée {Math.round(s.arriveSoc)} % → charger à {Math.round(s.leaveSoc)} % · ~{s.chargeMin} min</Text>
+              {s.station.inBelgium
+                ? <Text style={st.muted}>💳 Carte entreprise</Text>
+                : <Pressable onPress={() => Linking.openURL(priceLink(s.station.name, s.station.operator))}>
+                    <Text style={[st.muted, { color: C.warn }]}>💶 {s.station.price ? `${s.station.price} (non vérifié) · ` : ''}Voir le prix réel (Seety) ›</Text>
+                  </Pressable>}
               <Pressable style={[st.btn, { paddingVertical: 8, marginTop: 6 }]}
                 onPress={() => Linking.openURL(`google.navigation:q=${s.station.lat},${s.station.lng}`).catch(() =>
                   Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${s.station.lat},${s.station.lng}`))}>

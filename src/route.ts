@@ -61,7 +61,7 @@ async function osrmRoute(from: Place, to: Place): Promise<{ pts: RoutePt[]; km: 
 
 export interface RouteStation {
   id: string; name: string; operator?: string; lat: number; lng: number;
-  maxKw: number | null; plugs: Plug[]; inBelgium: boolean;
+  maxKw: number | null; plugs: Plug[]; inBelgium: boolean; price?: string;
   progressKm: number;   // position le long du trajet
   detourKm: number;     // écart par rapport à la route
 }
@@ -123,7 +123,7 @@ node.all(area.be)->.inbe;
     out.push({
       id: `osm-${e.id}`, name: t.name || t.brand || t.operator || 'Borne de recharge',
       operator: t.operator || t.brand || t.network, lat: e.lat, lng: e.lon,
-      maxKw, plugs: [...plugs], inBelgium: be.has(e.id), progressKm: prog, detourKm: best,
+      maxKw, plugs: [...plugs], inBelgium: be.has(e.id), price: t.charge || undefined, progressKm: prog, detourKm: best,
     });
   }
   return out;
