@@ -120,7 +120,7 @@ function Main() {
     <SafeAreaView style={st.root} edges={['top', 'bottom']}>
       <StatusBar style="light" />
       <View style={st.header}>
-        <Text style={st.title}>⚡ BorneFinder</Text>
+        <Text style={st.title}>🚗⚡ BorneFinder</Text>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {tab === 'near' && <Chip label={view === 'list' ? '🗺 Carte' : '☰ Liste'} active={false} onPress={() => setView(view === 'list' ? 'map' : 'list')} />}
           <Chip label="⚙︎" active={false} onPress={() => { setKeyDraft(prefs.ocmKey); setSettings(true); }} />
