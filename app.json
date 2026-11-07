@@ -7,17 +7,49 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
-    "splash": { "image": "./assets/splash-icon.png", "resizeMode": "contain", "backgroundColor": "#0F2A1D" },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F2A1D"
+    },
     "android": {
-      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#0F2A1D" },
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F2A1D"
+      },
       "package": "com.bornefinder.app",
       "edgeToEdgeEnabled": false,
-      "config": { "googleMaps": { "apiKey": "AIzaSyBjFz24Phawnr4Ldc8Uarvg6iPskrprsOY" } },
-      "permissions": ["android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"]
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBjFz24Phawnr4Ldc8Uarvg6iPskrprsOY"
+        }
+      },
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "plugins": [
-      ["expo-location", { "locationWhenInUsePermission": "BorneFinder utilise ta position pour trouver les bornes autour de toi." }]
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "BorneFinder utilise ta position pour trouver les bornes autour de toi."
+        }
+      ]
     ],
-    "runtimeVersion": { "policy": "appVersion" }
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "owner": "soul1979",
+    "extra": {
+      "eas": {
+        "projectId": "20d1ce9a-e882-405c-bd8f-2780eb61eff5"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/20d1ce9a-e882-405c-bd8f-2780eb61eff5",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }
