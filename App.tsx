@@ -8,7 +8,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Plug, searchStations, Station } from './src/stations';
+import { distanceKm, Plug, searchStations, Station } from './src/stations';
 import TripPanel from './src/TripPanel';
 import { cachedAround, storeArea } from './src/cache';
 
@@ -90,15 +90,19 @@ function Main() {
   useEffect(() => { locate(); }, [locate]);
 
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const reqId = useRef(0);
   const search = useCallback(async () => {
     if (!center) return;
+    const id = ++reqId.current; // une recherche plus récente annule l'affichage de celle-ci
     // 1. Affichage immédiat de ce qui est en mémoire.
     const cached = await cachedAround(center.lat, center.lng, prefs.radius);
+    if (id !== reqId.current) return;
     if (cached.stations.length) { setStations(cached.stations); setUpdatedAt(cached.updatedAt); setStatus(''); }
     else setStatus('Recherche des bornes…');
     // 2. Mise à jour en arrière-plan.
     setLoading(true);
     const r = await searchStations(center.lat, center.lng, prefs.radius, prefs.ocmKey.trim() || OCM_KEY);
+    if (id !== reqId.current) return;
     setLoading(false); setErrors(r.errors);
     if (r.stations.length) {
       setStations(r.stations); setUpdatedAt(Date.now());
@@ -132,7 +136,7 @@ function Main() {
   useEffect(() => {
     if (view !== 'map' || !mapRef.current || !shown.length) return;
     const pts = shown.slice(0, 15).map(s => ({ latitude: s.lat, longitude: s.lng }));
-    if (pos) pts.push({ latitude: pos.lat, longitude: pos.lng });
+    if (pos && center && distanceKm(pos.lat, pos.lng, center.lat, center.lng) <= prefs.radius) pts.push({ latitude: pos.lat, longitude: pos.lng });
     const t = setTimeout(() => mapRef.current?.fitToCoordinates(pts, { edgePadding: { top: 80, right: 60, bottom: 140, left: 60 }, animated: true }), 300);
     return () => clearTimeout(t);
   }, [view, stations]);

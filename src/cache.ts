@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { distanceKm, Station } from './stations';
 
 const KEY = 'stations-cache-v1';
-const MAX = 6000;
+const MAX = 3000; // Android refuse de relire une valeur AsyncStorage > ~2 Mo
 
 interface Store { stations: Record<string, Station>; areas: { lat: number; lng: number; r: number; at: number }[] }
 let mem: Store | null = null;

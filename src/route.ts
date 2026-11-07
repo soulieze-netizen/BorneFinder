@@ -230,7 +230,7 @@ export async function planTrip(from: Place, to: Place, o: PlanOptions): Promise<
   function reach(targetKm: number, filter: (s: RouteStation) => boolean, label: string) {
     let guard = 0;
     while (soc - (targetKm - pos) / kmPerPct < o.reserveSoc && guard++ < 10) {
-      const maxKm = pos + (soc - o.reserveSoc) / kmPerPct;
+      const maxKm = pos + (soc - o.reserveSoc) * kmPerPct;
       const cands = fast.filter(s => filter(s) && s.progressKm > pos + 15 && s.progressKm <= maxKm && s.progressKm < targetKm);
       if (!cands.length) { warnings.push(`Pas de borne rapide atteignable ${label}. Vérifie la charge au départ.`); return false; }
       const far = Math.max(...cands.map(s => s.progressKm));
