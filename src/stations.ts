@@ -19,11 +19,7 @@ export interface Station {
   distanceKm?: number;
 }
 
-const OVERPASS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
+import { overpass } from './overpass';
 
 function parseKw(v?: string): number | null {
   if (!v) return null;
@@ -46,16 +42,9 @@ const OSM_PLUGS: Record<string, Plug> = {
 async function fetchOsm(lat: number, lng: number, radiusKm: number): Promise<Station[]> {
   const r = Math.round(radiusKm * 1000);
   const q = `[out:json][timeout:25];(node["amenity"="charging_station"](around:${r},${lat},${lng});way["amenity"="charging_station"](around:${r},${lat},${lng}););out center tags;`;
-  let lastErr: unknown;
-  for (const url of OVERPASS) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'BorneFinder/1.0' },
-        body: 'data=' + encodeURIComponent(q),
-      });
-      if (!res.ok) throw new Error(`OSM ${res.status}`);
-      const json = await res.json();
+  {
+    {
+      const json = await overpass(q);
       return (json.elements ?? []).map((e: any): Station => {
         const t = e.tags ?? {};
         const plugs = new Set<Plug>();
@@ -78,9 +67,8 @@ async function fetchOsm(lat: number, lng: number, radiusKm: number): Promise<Sta
         };
       }).filter((s: Station, i: number) => s.lat && s.lng &&
         !/^(private|no)$/.test(json.elements[i]?.tags?.access ?? ''));
-    } catch (err) { lastErr = err; }
+    }
   }
-  throw lastErr ?? new Error('OSM indisponible');
 }
 
 const OCM_PLUGS: Record<number, Plug> = { 33: 'CCS', 32: 'CCS', 2: 'CHAdeMO', 25: 'Type 2', 1036: 'Type 2', 27: 'Tesla', 30: 'Tesla' };

@@ -6,6 +6,7 @@
 // Overpass/OpenStreetMap (bornes le long du trajet).
 
 import { distanceKm, Plug } from './stations';
+import { overpass } from './overpass';
 
 const UA = { 'User-Agent': 'BorneFinder/1.0 (app perso)' };
 
@@ -91,16 +92,7 @@ node["amenity"="charging_station"](around:2500,${line})->.all;
 node.all(area.be)->.inbe;
 .inbe out tags; out count;
 .all out tags;`;
-  const servers = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-  let json: any = null, lastErr: unknown;
-  for (const s of servers) {
-    try {
-      const res = await fetch(s, { method: 'POST', headers: { ...UA, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) });
-      if (!res.ok) throw new Error(`Bornes : erreur ${res.status}`);
-      json = await res.json(); break;
-    } catch (e) { lastErr = e; }
-  }
-  if (!json) throw lastErr ?? new Error('Bornes indisponibles');
+  const json: any = await overpass(q, 60000);
 
   // Le 1er bloc (avant l'élément "count") = bornes en Belgique.
   const be = new Set<number>();
