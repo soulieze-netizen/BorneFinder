@@ -113,6 +113,9 @@ export default function TripPanel({ position }: Props) {
           <View style={st.card}>
             <Text style={st.title}>{plan.to.label}</Text>
             <Text style={st.text}>{Math.round(plan.km)} km · conduite {hm(plan.driveMin)} · recharge {hm(totalCharge)}</Text>
+            {plan.border && (
+              <Text style={[st.big, { fontSize: 20, color: C.text }]}>🇧🇪→ Frontière (km {Math.round(plan.border.km)}) ≈ {Math.round(plan.border.soc)} %</Text>
+            )}
             <Text style={[st.big, { color: plan.arrivalSoc >= 20 ? C.accent : C.warn }]}>Arrivée ≈ {Math.round(plan.arrivalSoc)} %</Text>
           </View>
           {plan.warnings.map((w, i) => <Text key={i} style={{ color: C.warn }}>⚠️ {w}</Text>)}

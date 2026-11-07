@@ -137,6 +137,7 @@ export interface Stop {
 export interface Plan {
   from: Place; to: Place; km: number; driveMin: number;
   stops: Stop[]; arrivalSoc: number; warnings: string[];
+  border?: { km: number; soc: number };   // passage de frontière estimé
 }
 
 function isFast(s: RouteStation, minKw: number) {
@@ -218,9 +219,21 @@ export async function planTrip(from: Place, to: Place, o: PlanOptions): Promise<
     reach(route.km, () => true, 'sur le trajet');
   }
 
+  // % de batterie au passage de la frontière (dernier point du trajet proche d'une borne belge).
+  let border: Plan['border'];
+  if (startBE !== endBE) {
+    const beKm = all.filter(s => s.inBelgium).map(s => s.progressKm);
+    if (beKm.length) {
+      const km = startBE ? Math.max(...beKm) : Math.min(...beKm);
+      // Batterie à ce point, en rejouant les arrêts.
+      let p = 0, b = o.startSoc;
+      for (const st of stops) { if (st.station.progressKm > km) break; b = st.leaveSoc; p = st.station.progressKm; }
+      border = { km, soc: b - (km - p) / kmPerPct };
+    }
+  }
   const arrivalSoc = soc - (route.km - pos) / kmPerPct;
   if (arrivalSoc < o.reserveSoc) warnings.push(`Arrivée estimée à ${Math.round(arrivalSoc)} % : trop juste.`);
-  return { from, to, km: route.km, driveMin: route.minutes, stops, arrivalSoc, warnings };
+  return { from, to, km: route.km, driveMin: route.minutes, stops, arrivalSoc, warnings, border };
 }
 
 export function mapsLink(plan: Plan) {
