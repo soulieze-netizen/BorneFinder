@@ -42,10 +42,10 @@ const OSM_PLUGS: Record<string, Plug> = {
 
 async function fetchOsm(lat: number, lng: number, radiusKm: number): Promise<Station[]> {
   const r = Math.round(radiusKm * 1000);
-  const q = `[out:json][timeout:25];(node["amenity"="charging_station"](around:${r},${lat},${lng});way["amenity"="charging_station"](around:${r},${lat},${lng}););out center tags;`;
+  const q = `[out:json][timeout:15];node["amenity"="charging_station"](around:${r},${lat},${lng});out body;`;
   {
     {
-      const json = await overpass(q);
+      const json = await overpass(q, 15000);
       return (json.elements ?? []).map((e: any): Station => {
         const t = e.tags ?? {};
         const plugs = new Set<Plug>();

@@ -9,6 +9,7 @@ import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Plug, priceLink, searchStations, Station } from './src/stations';
 import TripPanel from './src/TripPanel';
+import { cachedAround, storeArea } from './src/cache';
 
 const C = { bg: '#0F2A1D', card: '#163A29', text: '#F2F7F4', muted: '#9FB8AA', accent: '#3DDC84', warn: '#FFB74D' };
 const POWER_FILTERS = [0, 50, 150, 300];
@@ -24,6 +25,14 @@ function kwColor(kw: number | null) {
   if (kw >= 100) return '#8BC34A';
   if (kw >= 43) return '#FFB74D';
   return '#B0BEC5';
+}
+
+function ago(t: number) {
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return "à l'instant";
+  if (m < 60) return `il y a ${m} min`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `il y a ${h} h` : `il y a ${Math.round(h / 24)} j`;
 }
 
 function navigateTo(s: Station) {
@@ -76,12 +85,24 @@ function Main() {
   }, []);
   useEffect(() => { locate(); }, [locate]);
 
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const search = useCallback(async () => {
     if (!center) return;
-    setLoading(true); setStatus('Recherche des bornes…');
+    // 1. Affichage immédiat de ce qui est en mémoire.
+    const cached = await cachedAround(center.lat, center.lng, prefs.radius);
+    if (cached.stations.length) { setStations(cached.stations); setUpdatedAt(cached.updatedAt); setStatus(''); }
+    else setStatus('Recherche des bornes…');
+    // 2. Mise à jour en arrière-plan.
+    setLoading(true);
     const r = await searchStations(center.lat, center.lng, prefs.radius, prefs.ocmKey.trim() || undefined);
-    setStations(r.stations); setErrors(r.errors); setLoading(false);
-    setStatus(r.stations.length ? '' : 'Aucune borne trouvée dans ce rayon.');
+    setLoading(false); setErrors(r.errors);
+    if (r.stations.length) {
+      setStations(r.stations); setUpdatedAt(Date.now());
+      storeArea(center.lat, center.lng, prefs.radius, r.stations);
+      setStatus('');
+    } else if (!cached.stations.length) {
+      setStatus(r.errors.length ? 'Recherche impossible pour le moment.' : 'Aucune borne trouvée dans ce rayon.');
+    }
   }, [center, prefs.radius, prefs.ocmKey]);
   useEffect(() => { search(); }, [search]);
 
@@ -152,7 +173,7 @@ function Main() {
           keyExtractor={s => s.id}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 12, gap: 10 }}
-          refreshing={loading}
+          refreshing={loading && !stations.length}
           onRefresh={() => { if (pos) setCenter({ ...pos }); else locate(); }}
           ListEmptyComponent={
             <View style={{ alignItems: 'center', padding: 30, gap: 10 }}>
@@ -161,7 +182,10 @@ function Main() {
             </View>
           }
           ListHeaderComponent={!loading && shown.length ? (
-            <Text style={st.count}>{shown.length} borne{shown.length > 1 ? 's' : ''} · {stations.length} au total dans {prefs.radius} km</Text>
+            <Text style={st.count}>
+              {shown.length} borne{shown.length > 1 ? 's' : ''} · {stations.length} au total dans {prefs.radius} km
+              {loading ? '  ·  🔄 mise à jour…' : updatedAt ? `  ·  à jour ${ago(updatedAt)}` : ''}
+            </Text>
           ) : null}
         />
       ) : (

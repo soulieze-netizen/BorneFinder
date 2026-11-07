@@ -90,8 +90,8 @@ async function stationsAlong(pts: RoutePt[]): Promise<RouteStation[]> {
 area["ISO3166-1"="BE"][admin_level=2]->.be;
 node["amenity"="charging_station"](around:2500,${line})->.all;
 node.all(area.be)->.inbe;
-.inbe out tags; out count;
-.all out tags;`;
+.inbe out ids; out count;
+.all out body;`;
   const json: any = await overpass(q, 60000);
 
   // Le 1er bloc (avant l'élément "count") = bornes en Belgique.
