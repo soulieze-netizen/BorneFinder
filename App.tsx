@@ -64,6 +64,9 @@ function Main() {
   const [keyDraft, setKeyDraft] = useState('');
   const [selected, setSelected] = useState<Station | null>(null);
   const mapRegion = useRef<Region | null>(null);
+  const mapRef = useRef<MapView | null>(null);
+  // Android : les pastilles personnalisées doivent être « suivies » le temps d'être dessinées, sinon elles restent invisibles.
+  const [trackPins, setTrackPins] = useState(true);
 
   useEffect(() => {
     AsyncStorage.getItem('prefs').then(v => { if (v) try { setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(v) }); } catch {} });
@@ -117,6 +120,22 @@ function Main() {
     const ka = a.maxKw == null ? 1 : 0, kb = b.maxKw == null ? 1 : 0;
     return ka - kb || a.distanceKm! - b.distanceKm!;
   }), [stations, prefs]);
+
+  useEffect(() => {
+    if (view !== 'map') return;
+    setTrackPins(true);
+    const t = setTimeout(() => setTrackPins(false), 1500);
+    return () => clearTimeout(t);
+  }, [shown, view]);
+
+  // Recadre la carte sur ma position + les bornes les plus proches.
+  useEffect(() => {
+    if (view !== 'map' || !mapRef.current || !shown.length) return;
+    const pts = shown.slice(0, 15).map(s => ({ latitude: s.lat, longitude: s.lng }));
+    if (pos) pts.push({ latitude: pos.lat, longitude: pos.lng });
+    const t = setTimeout(() => mapRef.current?.fitToCoordinates(pts, { edgePadding: { top: 80, right: 60, bottom: 140, left: 60 }, animated: true }), 300);
+    return () => clearTimeout(t);
+  }, [view, stations]);
 
   const renderItem = ({ item: s }: { item: Station }) => (
     <Pressable style={st.card} onPress={() => setSelected(s)}>
@@ -193,14 +212,16 @@ function Main() {
         <View style={{ flex: 1 }}>
           {center && (
             <MapView
+              ref={mapRef}
               provider={PROVIDER_GOOGLE}
               style={{ flex: 1 }}
+              showsMyLocationButton
               initialRegion={{ latitude: center.lat, longitude: center.lng, latitudeDelta: 0.25, longitudeDelta: 0.25 }}
               showsUserLocation
               onRegionChangeComplete={r => { mapRegion.current = r; }}
             >
               {shown.map(s => (
-                <Marker key={s.id} coordinate={{ latitude: s.lat, longitude: s.lng }} onPress={() => setSelected(s)} tracksViewChanges={false}>
+                <Marker key={s.id} coordinate={{ latitude: s.lat, longitude: s.lng }} onPress={() => setSelected(s)} tracksViewChanges={trackPins}>
                   <View style={[st.pin, { backgroundColor: kwColor(s.maxKw) }]}>
                     <Text style={st.pinTxt}>{s.maxKw != null ? Math.round(s.maxKw) : '?'}</Text>
                   </View>
