@@ -8,6 +8,7 @@ import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Plug, searchStations, Station } from './src/stations';
+import TripPanel from './src/TripPanel';
 
 const C = { bg: '#0F2A1D', card: '#163A29', text: '#F2F7F4', muted: '#9FB8AA', accent: '#3DDC84', warn: '#FFB74D' };
 const POWER_FILTERS = [0, 50, 150, 300];
@@ -48,6 +49,7 @@ function Main() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('Recherche de ta position…');
   const [view, setView] = useState<'list' | 'map'>('list');
+  const [tab, setTab] = useState<'near' | 'trip'>('near');
   const [settings, setSettings] = useState(false);
   const [keyDraft, setKeyDraft] = useState('');
   const [selected, setSelected] = useState<Station | null>(null);
@@ -120,11 +122,17 @@ function Main() {
       <View style={st.header}>
         <Text style={st.title}>⚡ BorneFinder</Text>
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Chip label={view === 'list' ? '🗺 Carte' : '☰ Liste'} active={false} onPress={() => setView(view === 'list' ? 'map' : 'list')} />
+          {tab === 'near' && <Chip label={view === 'list' ? '🗺 Carte' : '☰ Liste'} active={false} onPress={() => setView(view === 'list' ? 'map' : 'list')} />}
           <Chip label="⚙︎" active={false} onPress={() => { setKeyDraft(prefs.ocmKey); setSettings(true); }} />
         </View>
       </View>
 
+      <View style={[st.row, { paddingHorizontal: 12, paddingBottom: 8 }]}>
+        <Chip label="📍 Autour de moi" active={tab === 'near'} onPress={() => setTab('near')} />
+        <Chip label="🧭 Trajet" active={tab === 'trip'} onPress={() => setTab('trip')} />
+      </View>
+
+      {tab === 'trip' ? <TripPanel position={pos} /> : <>
       <View style={st.filters}>
         <View style={st.row}>
           {POWER_FILTERS.map(k => <Chip key={k} label={k === 0 ? 'Toutes' : `≥ ${k} kW`} active={prefs.minKw === k} onPress={() => updatePrefs({ minKw: k })} />)}
@@ -181,6 +189,8 @@ function Main() {
           </Pressable>
         </View>
       )}
+
+      </>}
 
       {/* Détail d'une station */}
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>

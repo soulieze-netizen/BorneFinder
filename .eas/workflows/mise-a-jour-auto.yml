@@ -1,0 +1,29 @@
+name: Mise à jour automatique
+
+# À chaque push sur main, publie le nouveau code : l'appli installée le
+# récupère au prochain lancement, sans réinstaller d'APK.
+# Tourne sur Expo (dépôt connecté à expo.dev) : aucun token GitHub nécessaire.
+# Les fichiers « natifs » sont exclus : s'ils changent, il faut un nouvel
+# APK (Build from GitHub sur expo.dev) et monter la version dans app.json.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**'
+      - '!package.json'
+      - '!package-lock.json'
+      - '!app.json'
+      - '!eas.json'
+      - '!android-signing/**'
+      - '!.github/**'
+      - '!**/*.md'
+
+jobs:
+  publier:
+    name: Publier la mise à jour
+    type: update
+    environment: production
+    params:
+      channel: production
+      platform: android
