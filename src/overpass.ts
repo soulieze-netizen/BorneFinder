@@ -3,12 +3,13 @@ const SERVERS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
-export async function overpass(query: string, timeoutMs = 25000): Promise<any> {
+export async function overpass(query: string, timeoutMs = 12000, budgetMs = 30000): Promise<any> {
   const errors: string[] = [];
+  const start = Date.now();
   for (const base of SERVERS) {
+    if (Date.now() - start > budgetMs) break;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {

@@ -1,3 +1,4 @@
+import { OCM_KEY } from './src/net';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, FlatList, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View,
@@ -94,7 +95,7 @@ function Main() {
     else setStatus('Recherche des bornes…');
     // 2. Mise à jour en arrière-plan.
     setLoading(true);
-    const r = await searchStations(center.lat, center.lng, prefs.radius, prefs.ocmKey.trim() || undefined);
+    const r = await searchStations(center.lat, center.lng, prefs.radius, prefs.ocmKey.trim() || OCM_KEY);
     setLoading(false); setErrors(r.errors);
     if (r.stations.length) {
       setStations(r.stations); setUpdatedAt(Date.now());
@@ -249,7 +250,7 @@ function Main() {
         <View style={st.backdrop}>
           <View style={st.sheet}>
             <Text style={st.sheetTitle}>Réglages</Text>
-            <Text style={st.sub}>Clé Open Charge Map (gratuite, sur openchargemap.org → My Profile → My Apps). Sans clé, seule la base OpenStreetMap est utilisée.</Text>
+            <Text style={st.sub}>Clé Open Charge Map (gratuite, sur openchargemap.org → My Profile → My Apps). Laisse vide pour utiliser la clé intégrée.</Text>
             <TextInput value={keyDraft} onChangeText={setKeyDraft} placeholder="Colle ta clé ici" placeholderTextColor={C.muted}
               autoCapitalize="none" autoCorrect={false} style={st.input} />
             <Pressable onPress={() => updatePrefs({ showUnknown: !prefs.showUnknown })} style={{ paddingVertical: 10 }}>

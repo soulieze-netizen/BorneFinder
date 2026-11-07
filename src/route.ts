@@ -7,6 +7,7 @@
 
 import { distanceKm, Plug } from './stations';
 import { overpass } from './overpass';
+import { fetchT } from './net';
 
 const UA = { 'User-Agent': 'BorneFinder/1.0 (app perso)' };
 
@@ -22,7 +23,7 @@ export interface Place { lat: number; lng: number; label: string; country: strin
 
 export async function geocode(q: string): Promise<Place[]> {
   const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&accept-language=fr&q=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { headers: UA });
+  const res = await fetchT(url, { headers: UA }, 12000);
   if (!res.ok) throw new Error(`Recherche d'adresse : erreur ${res.status}`);
   const json = await res.json();
   return json.map((r: any) => ({
@@ -34,17 +35,19 @@ export async function geocode(q: string): Promise<Place[]> {
 
 export async function countryOf(lat: number, lng: number): Promise<string> {
   const url = `https://nominatim.openstreetmap.org/reverse?format=json&zoom=3&lat=${lat}&lon=${lng}`;
-  const res = await fetch(url, { headers: UA });
-  if (!res.ok) return '';
-  const json = await res.json();
-  return (json.address?.country_code ?? '').toUpperCase();
+  try {
+    const res = await fetchT(url, { headers: UA }, 8000);
+    if (res.ok) { const c = ((await res.json()).address?.country_code ?? '').toUpperCase(); if (c) return c; }
+  } catch {}
+  // Secours approximatif : rectangle autour de la Belgique.
+  return lat > 49.5 && lat < 51.5 && lng > 2.55 && lng < 6.4 ? 'BE' : '';
 }
 
 interface RoutePt { lat: number; lng: number; km: number }
 
 async function osrmRoute(from: Place, to: Place): Promise<{ pts: RoutePt[]; km: number; minutes: number }> {
   const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
-  const res = await fetch(url, { headers: UA });
+  const res = await fetchT(url, { headers: UA }, 20000);
   if (!res.ok) throw new Error(`Itinéraire : erreur ${res.status}`);
   const json = await res.json();
   const r = json.routes?.[0];
@@ -103,7 +106,7 @@ async function stationsAlongOcm(pts: RoutePt[], key: string): Promise<RouteStati
   sample.push(pts[pts.length - 1]);
   const url = `https://api.openchargemap.io/v3/poi/?output=json&compact=false&verbose=false&maxresults=1000` +
     `&distance=2.5&distanceunit=KM&minpowerkw=40&polyline=${encodeURIComponent(encodePolyline(sample))}&key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, { headers: UA });
+  const res = await fetchT(url, { headers: UA }, 25000);
   if (!res.ok) throw new Error(`Open Charge Map : erreur ${res.status}`);
   const json = await res.json();
   return (json ?? []).map((p: any): RouteStation => {
@@ -122,26 +125,30 @@ async function stationsAlongOcm(pts: RoutePt[], key: string): Promise<RouteStati
 
 /** Bornes à moins de 2,5 km de la route, avec indication Belgique oui/non. */
 async function stationsAlong(pts: RoutePt[]): Promise<RouteStation[]> {
-  // Échantillonne la route tous les ~4 km pour la requête.
+  // Secours OpenStreetMap : la route est découpée en tronçons de ~60 km (une requête géante échoue toujours).
   const sample: RoutePt[] = [];
   let next = 0;
   for (const p of pts) if (p.km >= next) { sample.push(p); next = p.km + 4; }
   sample.push(pts[pts.length - 1]);
-  const line = sample.map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(',');
-  const q = `[out:json][timeout:60];
+  const els: any[] = [];
+  const be = new Set<number>();
+  for (let c = 0; c < sample.length; c += 15) {
+    const chunk = sample.slice(Math.max(0, c - 1), c + 15);
+    const line = chunk.map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(',');
+    const q = `[out:json][timeout:25];
 area["ISO3166-1"="BE"][admin_level=2]->.be;
 node["amenity"="charging_station"](around:2500,${line})->.all;
 node.all(area.be)->.inbe;
 .inbe out ids; out count;
 .all out body;`;
-  const json: any = await overpass(q, 60000);
-
-  // Le 1er bloc (avant l'élément "count") = bornes en Belgique.
-  const be = new Set<number>();
-  const els: any[] = json.elements ?? [];
-  let i = 0;
-  for (; i < els.length && els[i].type !== 'count'; i++) be.add(els[i].id);
-  const all = els.slice(i + 1).filter(e => e.type === 'node');
+    const part: any = await overpass(q, 20000, 40000);
+    const pe: any[] = part.elements ?? [];
+    let k = 0;
+    for (; k < pe.length && pe[k].type !== 'count'; k++) be.add(pe[k].id);
+    els.push(...pe.slice(k + 1));
+  }
+  const json = { elements: [{ type: 'count' }, ...els] };
+  const all = json.elements.slice(1).filter((e: any) => e.type === 'node');
 
   const seen = new Set<number>();
   const out: RouteStation[] = [];
@@ -202,7 +209,10 @@ export async function planTrip(from: Place, to: Place, o: PlanOptions): Promise<
   let all: RouteStation[];
   if (o.ocmKey) {
     try { all = await stationsAlongOcm(route.pts, o.ocmKey); }
-    catch { all = await stationsAlong(route.pts); }
+    catch (e: any) {
+      try { all = await stationsAlong(route.pts); }
+      catch { throw new Error(`Bornes introuvables : ${e?.message ?? e}. Réessaie dans un moment.`); }
+    }
   } else all = await stationsAlong(route.pts);
   const warnings: string[] = [];
   const kmPerPct = car.capacityKwh / 100 / (car.consumption / 100); // km par % de batterie

@@ -21,6 +21,7 @@ export interface Station {
 }
 
 import { overpass } from './overpass';
+import { fetchT } from './net';
 
 function parseKw(v?: string): number | null {
   if (!v) return null;
@@ -45,7 +46,7 @@ async function fetchOsm(lat: number, lng: number, radiusKm: number): Promise<Sta
   const q = `[out:json][timeout:15];node["amenity"="charging_station"](around:${r},${lat},${lng});out body;`;
   {
     {
-      const json = await overpass(q, 25000);
+      const json = await overpass(q, 12000, 25000);
       return (json.elements ?? []).map((e: any): Station => {
         const t = e.tags ?? {};
         const plugs = new Set<Plug>();
@@ -78,7 +79,7 @@ const OCM_PLUGS: Record<number, Plug> = { 33: 'CCS', 32: 'CCS', 2: 'CHAdeMO', 25
 async function fetchOcm(lat: number, lng: number, radiusKm: number, key: string): Promise<Station[]> {
   const url = `https://api.openchargemap.io/v3/poi/?output=json&latitude=${lat}&longitude=${lng}` +
     `&distance=${radiusKm}&distanceunit=KM&maxresults=500&compact=false&verbose=false&key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'BorneFinder/1.0' } });
+  const res = await fetchT(url, { headers: { 'User-Agent': 'BorneFinder/1.0' } }, 15000);
   if (!res.ok) throw new Error(`Open Charge Map ${res.status}`);
   const json = await res.json();
   return (json ?? []).map((p: any): Station => {
@@ -127,15 +128,17 @@ export interface SearchResult { stations: Station[]; errors: string[] }
 
 export async function searchStations(lat: number, lng: number, radiusKm: number, ocmKey?: string): Promise<SearchResult> {
   const errors: string[] = [];
-  const jobs: Promise<Station[]>[] = [
-    fetchOsm(lat, lng, radiusKm).catch(e => { errors.push(`OpenStreetMap : ${e?.message ?? e}`); return []; }),
-  ];
-  if (ocmKey) jobs.push(fetchOcm(lat, lng, radiusKm, ocmKey).catch(e => { errors.push(`Open Charge Map : ${e?.message ?? e}`); return []; }));
-  const all = (await Promise.all(jobs)).flat();
-  // Si Open Charge Map a répondu, l'échec d'OpenStreetMap n'est pas bloquant : on ne l'affiche pas.
-  if (ocmKey && all.some(s => s.sources.includes('OCM'))) {
-    for (let i = errors.length - 1; i >= 0; i--) if (errors[i].startsWith('OpenStreetMap')) errors.splice(i, 1);
-  }
+  const osm = fetchOsm(lat, lng, radiusKm).catch(e => { errors.push(`OpenStreetMap : ${e?.message ?? e}`); return [] as Station[]; });
+  let all: Station[];
+  if (ocmKey) {
+    const ocm = await fetchOcm(lat, lng, radiusKm, ocmKey).catch(e => { errors.push(`Open Charge Map : ${e?.message ?? e}`); return null; });
+    if (ocm && ocm.length) {
+      // Open Charge Map a répondu : on n'attend OpenStreetMap que 4 s de plus (complément), sinon tant pis.
+      const extra = await Promise.race([osm, new Promise<Station[]>(r => setTimeout(() => r([]), 4000))]);
+      all = [...ocm, ...extra];
+      for (let i = errors.length - 1; i >= 0; i--) if (errors[i].startsWith('OpenStreetMap')) errors.splice(i, 1);
+    } else all = await osm;
+  } else all = await osm;
   const stations = merge(all)
     .map(s => ({ ...s, distanceKm: distanceKm(lat, lng, s.lat, s.lng) }))
     .sort((a, b) => a.distanceKm! - b.distanceKm!);

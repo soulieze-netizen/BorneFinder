@@ -1,3 +1,4 @@
+import { OCM_KEY } from './net';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -53,7 +54,7 @@ export default function TripPanel({ position, ocmKey }: Props) {
       const country = await countryOf(position.lat, position.lng);
       const from: Place = { lat: position.lat, lng: position.lng, label: 'Ma position', country };
       const p = await planTrip(from, to, {
-        car, startSoc: s, reserveSoc: 12, ocmKey: ocmKey?.trim() || undefined,
+        car, startSoc: s, reserveSoc: 12, ocmKey: ocmKey?.trim() || OCM_KEY,
         borderTargetSoc: Math.max(50, Math.min(100, parseInt(borderTarget, 10) || 95)),
       });
       setPlan(p);
