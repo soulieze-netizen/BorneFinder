@@ -6,13 +6,23 @@ const SERVERS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
-export async function overpass(query: string, timeoutMs = 30000): Promise<any> {
+export async function overpass(query: string, timeoutMs = 25000): Promise<any> {
   const errors: string[] = [];
   for (const base of SERVERS) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const res = await fetch(`${base}?data=${encodeURIComponent(query)}`, { signal: ctrl.signal });
+      // overpass-api.de refuse (HTTP 406) les requêtes sans identification d'appli.
+      const res = await fetch(base, {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: {
+          'User-Agent': 'BorneFinder/1.0 (+https://github.com/soulieze-netizen/BorneFinder)',
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        },
+        body: 'data=' + encodeURIComponent(query),
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       clearTimeout(timer);

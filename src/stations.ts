@@ -45,7 +45,7 @@ async function fetchOsm(lat: number, lng: number, radiusKm: number): Promise<Sta
   const q = `[out:json][timeout:15];node["amenity"="charging_station"](around:${r},${lat},${lng});out body;`;
   {
     {
-      const json = await overpass(q, 15000);
+      const json = await overpass(q, 25000);
       return (json.elements ?? []).map((e: any): Station => {
         const t = e.tags ?? {};
         const plugs = new Set<Plug>();
