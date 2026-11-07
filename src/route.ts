@@ -78,6 +78,48 @@ function parseKw(v?: string): number | null {
   return best;
 }
 
+function encodePolyline(pts: { lat: number; lng: number }[]) {
+  let out = '', pLat = 0, pLng = 0;
+  const enc = (v: number) => { v = v < 0 ? ~(v << 1) : v << 1; let s = ''; while (v >= 0x20) { s += String.fromCharCode((0x20 | (v & 0x1f)) + 63); v >>= 5; } return s + String.fromCharCode(v + 63); };
+  for (const p of pts) { const la = Math.round(p.lat * 1e5), ln = Math.round(p.lng * 1e5); out += enc(la - pLat) + enc(ln - pLng); pLat = la; pLng = ln; }
+  return out;
+}
+
+const OCM_PLUG: Record<number, Plug> = { 33: 'CCS', 32: 'CCS', 2: 'CHAdeMO', 25: 'Type 2', 1036: 'Type 2', 27: 'Tesla', 30: 'Tesla' };
+
+function locate(pts: RoutePt[], lat: number, lng: number) {
+  let best = Infinity, prog = 0;
+  for (let j = 0; j < pts.length; j += 3) {
+    const d = distanceKm(lat, lng, pts[j].lat, pts[j].lng);
+    if (d < best) { best = d; prog = pts[j].km; }
+  }
+  return { prog, detour: best };
+}
+
+/** Open Charge Map le long du trajet (fiable, nécessite une clé). */
+async function stationsAlongOcm(pts: RoutePt[], key: string): Promise<RouteStation[]> {
+  const sample: RoutePt[] = []; let next = 0;
+  for (const p of pts) if (p.km >= next) { sample.push(p); next = p.km + 5; }
+  sample.push(pts[pts.length - 1]);
+  const url = `https://api.openchargemap.io/v3/poi/?output=json&compact=false&verbose=false&maxresults=1000` +
+    `&distance=2.5&distanceunit=KM&minpowerkw=40&polyline=${encodeURIComponent(encodePolyline(sample))}&key=${encodeURIComponent(key)}`;
+  const res = await fetch(url, { headers: UA });
+  if (!res.ok) throw new Error(`Open Charge Map : erreur ${res.status}`);
+  const json = await res.json();
+  return (json ?? []).map((p: any): RouteStation => {
+    const a = p.AddressInfo ?? {}; const conns: any[] = p.Connections ?? [];
+    const kws = conns.map(c => c.PowerKW).filter((n: any) => typeof n === 'number' && n > 0);
+    const { prog, detour } = locate(pts, a.Latitude, a.Longitude);
+    return {
+      id: `ocm-${p.ID}`, name: a.Title || 'Borne de recharge', operator: p.OperatorInfo?.Title,
+      lat: a.Latitude, lng: a.Longitude, maxKw: kws.length ? Math.max(...kws) : null,
+      plugs: [...new Set(conns.map(c => OCM_PLUG[c.ConnectionTypeID] ?? 'Autre'))],
+      inBelgium: (a.Country?.ISOCode ?? '') === 'BE',
+      price: p.UsageCost || undefined, progressKm: prog, detourKm: detour,
+    };
+  }).filter((s: RouteStation) => s.lat && s.lng);
+}
+
 /** Bornes à moins de 2,5 km de la route, avec indication Belgique oui/non. */
 async function stationsAlong(pts: RoutePt[]): Promise<RouteStation[]> {
   // Échantillonne la route tous les ~4 km pour la requête.
@@ -152,12 +194,16 @@ function chargeMinutes(car: Car, s: RouteStation, from: number, to: number) {
   return Math.round((a / (p * 0.75) + b / (p * 0.3)) * 60);
 }
 
-export interface PlanOptions { car: Car; startSoc: number; borderTargetSoc: number; reserveSoc: number }
+export interface PlanOptions { car: Car; startSoc: number; borderTargetSoc: number; reserveSoc: number; ocmKey?: string }
 
 export async function planTrip(from: Place, to: Place, o: PlanOptions): Promise<Plan> {
   const { car } = o;
   const route = await osrmRoute(from, to);
-  const all = await stationsAlong(route.pts);
+  let all: RouteStation[];
+  if (o.ocmKey) {
+    try { all = await stationsAlongOcm(route.pts, o.ocmKey); }
+    catch { all = await stationsAlong(route.pts); }
+  } else all = await stationsAlong(route.pts);
   const warnings: string[] = [];
   const kmPerPct = car.capacityKwh / 100 / (car.consumption / 100); // km par % de batterie
 

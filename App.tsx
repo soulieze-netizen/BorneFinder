@@ -154,7 +154,7 @@ function Main() {
         <Chip label="🧭 Trajet" active={tab === 'trip'} onPress={() => setTab('trip')} />
       </View>
 
-      {tab === 'trip' ? <TripPanel position={pos} /> : <>
+      {tab === 'trip' ? <TripPanel position={pos} ocmKey={prefs.ocmKey} /> : <>
       <View style={st.filters}>
         <View style={st.row}>
           {POWER_FILTERS.map(k => <Chip key={k} label={k === 0 ? 'Toutes' : `≥ ${k} kW`} active={prefs.minKw === k} onPress={() => updatePrefs({ minKw: k })} />)}

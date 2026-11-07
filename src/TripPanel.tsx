@@ -6,9 +6,9 @@ import { Car, countryOf, DEFAULT_CAR, geocode, mapsLink, Place, Plan, planTrip }
 
 const C = { bg: '#0F2A1D', card: '#163A29', text: '#F2F7F4', muted: '#9FB8AA', accent: '#3DDC84', warn: '#FFB74D' };
 
-interface Props { position: { lat: number; lng: number } | null }
+interface Props { position: { lat: number; lng: number } | null; ocmKey?: string }
 
-export default function TripPanel({ position }: Props) {
+export default function TripPanel({ position, ocmKey }: Props) {
   const [dest, setDest] = useState('');
   const [soc, setSoc] = useState('80');
   const [borderTarget, setBorderTarget] = useState('95');
@@ -53,7 +53,7 @@ export default function TripPanel({ position }: Props) {
       const country = await countryOf(position.lat, position.lng);
       const from: Place = { lat: position.lat, lng: position.lng, label: 'Ma position', country };
       const p = await planTrip(from, to, {
-        car, startSoc: s, reserveSoc: 12,
+        car, startSoc: s, reserveSoc: 12, ocmKey: ocmKey?.trim() || undefined,
         borderTargetSoc: Math.max(50, Math.min(100, parseInt(borderTarget, 10) || 95)),
       });
       setPlan(p);

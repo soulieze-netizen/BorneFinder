@@ -77,7 +77,7 @@ const OCM_PLUGS: Record<number, Plug> = { 33: 'CCS', 32: 'CCS', 2: 'CHAdeMO', 25
 
 async function fetchOcm(lat: number, lng: number, radiusKm: number, key: string): Promise<Station[]> {
   const url = `https://api.openchargemap.io/v3/poi/?output=json&latitude=${lat}&longitude=${lng}` +
-    `&distance=${radiusKm}&distanceunit=KM&maxresults=500&compact=true&verbose=false&key=${encodeURIComponent(key)}`;
+    `&distance=${radiusKm}&distanceunit=KM&maxresults=500&compact=false&verbose=false&key=${encodeURIComponent(key)}`;
   const res = await fetch(url, { headers: { 'User-Agent': 'BorneFinder/1.0' } });
   if (!res.ok) throw new Error(`Open Charge Map ${res.status}`);
   const json = await res.json();
@@ -132,6 +132,10 @@ export async function searchStations(lat: number, lng: number, radiusKm: number,
   ];
   if (ocmKey) jobs.push(fetchOcm(lat, lng, radiusKm, ocmKey).catch(e => { errors.push(`Open Charge Map : ${e?.message ?? e}`); return []; }));
   const all = (await Promise.all(jobs)).flat();
+  // Si Open Charge Map a répondu, l'échec d'OpenStreetMap n'est pas bloquant : on ne l'affiche pas.
+  if (ocmKey && all.some(s => s.sources.includes('OCM'))) {
+    for (let i = errors.length - 1; i >= 0; i--) if (errors[i].startsWith('OpenStreetMap')) errors.splice(i, 1);
+  }
   const stations = merge(all)
     .map(s => ({ ...s, distanceKm: distanceKm(lat, lng, s.lat, s.lng) }))
     .sort((a, b) => a.distanceKm! - b.distanceKm!);
