@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "BorneFinder",
+    "slug": "bornefinder",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": { "image": "./assets/splash-icon.png", "resizeMode": "contain", "backgroundColor": "#0F2A1D" },
+    "android": {
+      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#0F2A1D" },
+      "package": "com.bornefinder.app",
+      "edgeToEdgeEnabled": false,
+      "config": { "googleMaps": { "apiKey": "AIzaSyBjFz24Phawnr4Ldc8Uarvg6iPskrprsOY" } },
+      "permissions": ["android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"]
+    },
+    "plugins": [
+      ["expo-location", { "locationWhenInUsePermission": "BorneFinder utilise ta position pour trouver les bornes autour de toi." }]
+    ],
+    "runtimeVersion": { "policy": "appVersion" }
+  }
+}
