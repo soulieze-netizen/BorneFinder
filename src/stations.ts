@@ -16,8 +16,9 @@ export interface Station {
   points?: number;           // nombre de points de charge
   address?: string;
   price?: string;            // tarif si une base le connaît (non vérifié)
-  sources: ('OSM' | 'OCM')[];
+  sources: ('OSM' | 'OCM' | 'Moi')[];
   distanceKm?: number;
+  myId?: string;             // présente dans « Mes stations »
 }
 
 import { overpass } from './overpass';
@@ -43,10 +44,11 @@ const OSM_PLUGS: Record<string, Plug> = {
 
 async function fetchOsm(lat: number, lng: number, radiusKm: number): Promise<Station[]> {
   const r = Math.round(radiusKm * 1000);
-  const q = `[out:json][timeout:15];node["amenity"="charging_station"](around:${r},${lat},${lng});out body;`;
+  // nwr = points ET zones (beaucoup de grandes stations sont dessinées comme une zone) ; « center » donne leur position.
+  const q = `[out:json][timeout:20];nwr["amenity"="charging_station"](around:${r},${lat},${lng});out center;`;
   {
     {
-      const json = await overpass(q, 12000, 25000);
+      const json = await overpass(q, 15000, 30000);
       return (json.elements ?? []).map((e: any): Station => {
         const t = e.tags ?? {};
         const plugs = new Set<Plug>();
@@ -126,23 +128,32 @@ function merge(list: Station[]): Station[] {
 
 export interface SearchResult { stations: Station[]; errors: string[] }
 
-export async function searchStations(lat: number, lng: number, radiusKm: number, ocmKey?: string): Promise<SearchResult> {
+/**
+ * `onPartial` reçoit tout de suite les bornes d'Open Charge Map ; le résultat final ajoute
+ * celles d'OpenStreetMap (qui répond souvent plus lentement) au lieu de les abandonner.
+ */
+export async function searchStations(
+  lat: number, lng: number, radiusKm: number, ocmKey?: string, onPartial?: (stations: Station[]) => void,
+): Promise<SearchResult> {
   const errors: string[] = [];
   const osm = fetchOsm(lat, lng, radiusKm).catch(e => { errors.push(`OpenStreetMap : ${e?.message ?? e}`); return [] as Station[]; });
   let all: Station[];
   if (ocmKey) {
     const ocm = await fetchOcm(lat, lng, radiusKm, ocmKey).catch(e => { errors.push(`Open Charge Map : ${e?.message ?? e}`); return null; });
     if (ocm && ocm.length) {
-      // Open Charge Map a répondu : on n'attend OpenStreetMap que 4 s de plus (complément), sinon tant pis.
-      const extra = await Promise.race([osm, new Promise<Station[]>(r => setTimeout(() => r([]), 4000))]);
-      all = [...ocm, ...extra];
+      // Open Charge Map a répondu : on l'affiche déjà, puis on complète avec OpenStreetMap.
+      onPartial?.(finalize(ocm, lat, lng));
+      all = [...ocm, ...(await osm)];
       for (let i = errors.length - 1; i >= 0; i--) if (errors[i].startsWith('OpenStreetMap')) errors.splice(i, 1);
     } else all = await osm;
   } else all = await osm;
-  const stations = merge(all)
+  return { stations: finalize(all, lat, lng), errors };
+}
+
+function finalize(all: Station[], lat: number, lng: number) {
+  return merge(all)
     .map(s => ({ ...s, distanceKm: distanceKm(lat, lng, s.lat, s.lng) }))
     .sort((a, b) => a.distanceKm! - b.distanceKm!);
-  return { stations, errors };
 }
 
 /** Lien pour consulter le tarif réel (recherche Seety, qui affiche les prix à jour). */

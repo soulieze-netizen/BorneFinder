@@ -8,6 +8,7 @@
 import { distanceKm, Plug } from './stations';
 import { overpass } from './overpass';
 import { fetchT } from './net';
+import { loadMyStations } from './myStations';
 
 const UA = { 'User-Agent': 'BorneFinder/1.0 (app perso)' };
 
@@ -131,33 +132,36 @@ async function stationsAlong(pts: RoutePt[]): Promise<RouteStation[]> {
   for (const p of pts) if (p.km >= next) { sample.push(p); next = p.km + 4; }
   sample.push(pts[pts.length - 1]);
   const els: any[] = [];
-  const be = new Set<number>();
+  const be = new Set<string>(); // « node123 », « way456 » : un point et une zone peuvent avoir le même numéro
   for (let c = 0; c < sample.length; c += 15) {
     const chunk = sample.slice(Math.max(0, c - 1), c + 15);
     const line = chunk.map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(',');
     const q = `[out:json][timeout:25];
 area["ISO3166-1"="BE"][admin_level=2]->.be;
-node["amenity"="charging_station"](around:2500,${line})->.all;
-node.all(area.be)->.inbe;
+nwr["amenity"="charging_station"](around:2500,${line})->.all;
+nwr.all(area.be)->.inbe;
 .inbe out ids; out count;
-.all out body;`;
+.all out center;`;
     const part: any = await overpass(q, 20000, 40000);
     const pe: any[] = part.elements ?? [];
     let k = 0;
-    for (; k < pe.length && pe[k].type !== 'count'; k++) be.add(pe[k].id);
+    for (; k < pe.length && pe[k].type !== 'count'; k++) be.add(pe[k].type + pe[k].id);
     els.push(...pe.slice(k + 1));
   }
   const json = { elements: [{ type: 'count' }, ...els] };
-  const all = json.elements.slice(1).filter((e: any) => e.type === 'node');
+  const all = json.elements.slice(1)
+    .map((e: any) => ({ ...e, lat: e.lat ?? e.center?.lat, lon: e.lon ?? e.center?.lon }))
+    .filter((e: any) => e.lat && e.lon);
 
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   const out: RouteStation[] = [];
   for (const e of all) {
-    if (seen.has(e.id)) continue; seen.add(e.id);
+    const key = e.type + e.id;
+    if (seen.has(key)) continue; seen.add(key);
     const t = e.tags ?? {};
     if (/^(private|no)$/.test(t.access ?? '')) continue;
     const plugs = new Set<Plug>();
-    let maxKw = parseKw(t['charging_station:output']);
+    let maxKw = parseKw(t['charging_station:output']) ?? parseKw(t['maxpower']);
     for (const k of Object.keys(t)) {
       const m = k.match(/^socket:([a-z0-9_]+)(:output)?$/); if (!m) continue;
       if (m[2]) { const kw = parseKw(t[k]); if (kw && (maxKw == null || kw > maxKw)) maxKw = kw; }
@@ -170,9 +174,9 @@ node.all(area.be)->.inbe;
       if (d < best) { best = d; prog = pts[j].km; }
     }
     out.push({
-      id: `osm-${e.id}`, name: t.name || t.brand || t.operator || 'Borne de recharge',
+      id: `osm-${e.type}-${e.id}`, name: t.name || t.brand || t.operator || 'Borne de recharge',
       operator: t.operator || t.brand || t.network, lat: e.lat, lng: e.lon,
-      maxKw, plugs: [...plugs], inBelgium: be.has(e.id), price: t.charge || undefined, progressKm: prog, detourKm: best,
+      maxKw, plugs: [...plugs], inBelgium: be.has(key), price: t.charge || undefined, progressKm: prog, detourKm: best,
     });
   }
   return out;
@@ -216,6 +220,13 @@ export async function planTrip(from: Place, to: Place, o: PlanOptions): Promise<
       catch { throw new Error(`Bornes introuvables : ${e?.message ?? e}. Réessaie dans un moment.`); }
     }
   } else all = await stationsAlong(route.pts);
+  // Mes stations (ajoutées à la main) proches de la route : elles remplacent la fiche d'une base au même endroit.
+  for (const m of await loadMyStations()) {
+    const { prog, detour } = locate(route.pts, m.lat, m.lng);
+    if (detour > 2.5) continue;
+    all = all.filter(s => distanceKm(s.lat, s.lng, m.lat, m.lng) >= 0.15);
+    all.push({ id: m.id, name: m.name, lat: m.lat, lng: m.lng, maxKw: m.maxKw, plugs: m.plugs, inBelgium: m.inBelgium, progressKm: prog, detourKm: detour });
+  }
   const warnings: string[] = [];
   const kmPerPct = car.capacityKwh / 100 / (car.consumption / 100); // km par % de batterie
 

@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { distanceKm, Plug, searchStations, Station } from './src/stations';
 import TripPanel from './src/TripPanel';
 import { cachedAround, storeArea } from './src/cache';
+import { addMyStation, loadMyStations, MyStation, removeMyStation, withMyStations } from './src/myStations';
 
 const C = { bg: '#0F2A1D', card: '#163A29', text: '#F2F7F4', muted: '#9FB8AA', accent: '#3DDC84', warn: '#FFB74D' };
 const POWER_FILTERS = [0, 50, 150, 300];
@@ -67,6 +68,26 @@ function Main() {
   const mapRef = useRef<MapView | null>(null);
   // Android : les pastilles personnalisées doivent être « suivies » le temps d'être dessinées, sinon elles restent invisibles.
   const [trackPins, setTrackPins] = useState(true);
+  // Mes stations (ajoutées à la main) + formulaire d'ajout (appui long sur la carte)
+  const [mine, setMine] = useState<MyStation[]>([]);
+  useEffect(() => { loadMyStations().then(setMine); }, []);
+  const [adding, setAdding] = useState<{ lat: number; lng: number } | null>(null);
+  const [addName, setAddName] = useState('');
+  const [addKw, setAddKw] = useState('300');
+  const [addPlugs, setAddPlugs] = useState<Plug[]>(['CCS']);
+  const [addBe, setAddBe] = useState(true);
+  const openAdd = (lat: number, lng: number) => {
+    setAddName(''); setAddKw('300'); setAddPlugs(['CCS']); setAddBe(true); setAdding({ lat, lng });
+  };
+  const saveAdd = async () => {
+    if (!adding) return;
+    const kw = parseFloat(addKw.replace(',', '.'));
+    setMine(await addMyStation({
+      name: addName.trim() || 'Ma borne', lat: adding.lat, lng: adding.lng,
+      maxKw: kw > 0 ? kw : null, plugs: addPlugs, inBelgium: addBe,
+    }));
+    setAdding(null);
+  };
 
   useEffect(() => {
     AsyncStorage.getItem('prefs').then(v => { if (v) try { setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(v) }); } catch {} });
@@ -101,7 +122,11 @@ function Main() {
     else setStatus('Recherche des bornes…');
     // 2. Mise à jour en arrière-plan.
     setLoading(true);
-    const r = await searchStations(center.lat, center.lng, prefs.radius, prefs.ocmKey.trim() || OCM_KEY);
+    const r = await searchStations(center.lat, center.lng, prefs.radius, prefs.ocmKey.trim() || OCM_KEY, partial => {
+      // Open Charge Map a répondu : affichage tout de suite, OpenStreetMap complétera
+      if (id !== reqId.current || !partial.length) return;
+      setStations(partial); setUpdatedAt(Date.now()); setStatus('');
+    });
     if (id !== reqId.current) return;
     setLoading(false); setErrors(r.errors);
     if (r.stations.length) {
@@ -114,7 +139,11 @@ function Main() {
   }, [center, prefs.radius, prefs.ocmKey]);
   useEffect(() => { search(); }, [search]);
 
-  const shown = useMemo(() => stations.filter(s => {
+  const all = useMemo(
+    () => (center ? withMyStations(stations, mine, center.lat, center.lng, prefs.radius) : stations),
+    [stations, mine, center, prefs.radius],
+  );
+  const shown = useMemo(() => all.filter(s => {
     if (s.maxKw == null) { if (!prefs.showUnknown) return false; }
     else if (s.maxKw < prefs.minKw) return false;
     if (prefs.plug !== 'Toutes' && s.plugs.length && !s.plugs.includes(prefs.plug)) return false;
@@ -123,7 +152,7 @@ function Main() {
     // Puissance connue d'abord, puis distance.
     const ka = a.maxKw == null ? 1 : 0, kb = b.maxKw == null ? 1 : 0;
     return ka - kb || a.distanceKm! - b.distanceKm!;
-  }), [stations, prefs]);
+  }), [all, prefs]);
 
   useEffect(() => {
     if (view !== 'map') return;
@@ -205,9 +234,9 @@ function Main() {
               <Text style={st.sub}>{status || 'Aucune borne ne correspond aux filtres.'}</Text>
             </View>
           }
-          ListHeaderComponent={!loading && shown.length ? (
+          ListHeaderComponent={shown.length ? (
             <Text style={st.count}>
-              {shown.length} borne{shown.length > 1 ? 's' : ''} · {stations.length} au total dans {prefs.radius} km
+              {shown.length} borne{shown.length > 1 ? 's' : ''} · {all.length} au total dans {prefs.radius} km
               {loading ? '  ·  🔄 mise à jour…' : updatedAt ? `  ·  à jour ${ago(updatedAt)}` : ''}
             </Text>
           ) : null}
@@ -223,6 +252,7 @@ function Main() {
               initialRegion={{ latitude: center.lat, longitude: center.lng, latitudeDelta: 0.25, longitudeDelta: 0.25 }}
               showsUserLocation
               onRegionChangeComplete={r => { mapRegion.current = r; }}
+              onLongPress={e => openAdd(e.nativeEvent.coordinate.latitude, e.nativeEvent.coordinate.longitude)}
             >
               {shown.map(s => (
                 <Marker key={s.id} coordinate={{ latitude: s.lat, longitude: s.lng }} onPress={() => setSelected(s)} tracksViewChanges={trackPins}>
@@ -238,6 +268,7 @@ function Main() {
           }}>
             <Text style={st.goTxt}>{loading ? 'Recherche…' : '🔍 Chercher dans cette zone'}</Text>
           </Pressable>
+          <Text style={st.mapHint}>Borne manquante ? Appui long sur la carte pour l'ajouter</Text>
         </View>
       )}
 
@@ -262,6 +293,13 @@ function Main() {
               <Pressable style={[st.go, { alignSelf: 'stretch', paddingVertical: 14, marginTop: 14 }]} onPress={() => navigateTo(selected)}>
                 <Text style={[st.goTxt, { fontSize: 17, textAlign: 'center' }]}>🧭 Y aller (Google Maps)</Text>
               </Pressable>
+              {selected.myId ? (
+                <Pressable style={{ paddingVertical: 12 }} onPress={async () => {
+                  setMine(await removeMyStation(selected.myId!)); setSelected(null);
+                }}>
+                  <Text style={[st.sub, { color: C.warn, textAlign: 'center' }]}>🗑 Retirer de mes stations</Text>
+                </Pressable>
+              ) : null}
             </Pressable>
           )}
         </Pressable>
@@ -278,9 +316,46 @@ function Main() {
             <Pressable onPress={() => updatePrefs({ showUnknown: !prefs.showUnknown })} style={{ paddingVertical: 10 }}>
               <Text style={st.name}>{prefs.showUnknown ? '☑' : '☐'} Afficher les bornes dont la puissance n'est pas renseignée</Text>
             </Pressable>
+            <Text style={[st.sub, { marginVertical: 8 }]}>
+              📌 Mes stations : {mine.length ? mine.map(m => m.name).join(', ') : 'aucune'}.
+              {'\n'}Pour en ajouter une : Carte → appui long à l'endroit de la borne.
+            </Text>
             <Pressable style={[st.go, { alignSelf: 'stretch', paddingVertical: 12 }]} onPress={() => { updatePrefs({ ocmKey: keyDraft.trim() }); setSettings(false); }}>
               <Text style={[st.goTxt, { textAlign: 'center' }]}>Enregistrer</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+      {/* Ajout d'une station à la main */}
+      <Modal visible={!!adding} transparent animationType="slide" onRequestClose={() => setAdding(null)}>
+        <View style={st.backdrop}>
+          <View style={st.sheet}>
+            <Text style={st.sheetTitle}>📌 Ajouter une station ici</Text>
+            <TextInput value={addName} onChangeText={setAddName} placeholder="Nom (ex. TotalEnergies Axisparc)"
+              placeholderTextColor={C.muted} style={st.input} />
+            <Text style={[st.sub, { marginTop: 10 }]}>Puissance max (kW)</Text>
+            <View style={[st.row, { marginTop: 4 }]}>
+              {['50', '150', '300', '350'].map(k => <Chip key={k} label={`${k} kW`} active={addKw === k} onPress={() => setAddKw(k)} />)}
+            </View>
+            <TextInput value={addKw} onChangeText={setAddKw} keyboardType="numeric" placeholder="kW" placeholderTextColor={C.muted} style={st.input} />
+            <Text style={[st.sub, { marginTop: 10 }]}>Prises</Text>
+            <View style={[st.row, { marginTop: 4 }]}>
+              {(['CCS', 'Type 2', 'CHAdeMO'] as Plug[]).map(p => (
+                <Chip key={p} label={p} active={addPlugs.includes(p)}
+                  onPress={() => setAddPlugs(addPlugs.includes(p) ? addPlugs.filter(x => x !== p) : [...addPlugs, p])} />
+              ))}
+            </View>
+            <Pressable onPress={() => setAddBe(!addBe)} style={{ paddingVertical: 10 }}>
+              <Text style={st.name}>{addBe ? '☑' : '☐'} En Belgique (ta carte de recharge y fonctionne)</Text>
+            </Pressable>
+            <View style={[st.row, { justifyContent: 'flex-end', gap: 10, marginTop: 6 }]}>
+              <Pressable style={{ paddingVertical: 12, paddingHorizontal: 10 }} onPress={() => setAdding(null)}>
+                <Text style={st.sub}>Annuler</Text>
+              </Pressable>
+              <Pressable style={[st.go, { paddingVertical: 12, paddingHorizontal: 18 }]} onPress={saveAdd}>
+                <Text style={st.goTxt}>Enregistrer</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
@@ -316,6 +391,7 @@ const st = StyleSheet.create({
   goTxt: { color: '#0F2A1D', fontWeight: '800' },
   pin: { minWidth: 34, paddingHorizontal: 5, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
   pinTxt: { color: '#0F2A1D', fontWeight: '900', fontSize: 12 },
+  mapHint: { position: 'absolute', bottom: 12, alignSelf: 'center', backgroundColor: 'rgba(15,42,29,0.85)', color: C.text, fontSize: 12, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 },
   searchHere: { position: 'absolute', top: 12, alignSelf: 'center', backgroundColor: C.accent, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, elevation: 5 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, gap: 4 },
